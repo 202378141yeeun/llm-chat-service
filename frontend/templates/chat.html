@@ -210,94 +210,353 @@
     </div>
 
     <script>
-        // DOM 요소들
-        const chatMessages = document.getElementById('chatMessages');
-        const chatInput = document.getElementById('chatInput');
-        const sendButton = document.getElementById('sendButton');
-        const typingIndicator = document.getElementById('typingIndicator');
+        /**
+         * ========================================
+         * LLM Chat Service - Frontend JavaScript
+         * ========================================
+         * 
+         * 이 파일은 채팅 UI의 모든 기능을 담당합니다.
+         * 백엔드 개발자는 아래 API 명세를 참고하여 개발해주세요.
+         * 
+         * API 엔드포인트: /api/chat
+         * 메소드: POST
+         * 요청 형식: { "message": "사용자 메시지", "session_id": "세션ID" }
+         * 응답 형식: { "response": "AI 응답", "status": "success", "session_id": "세션ID" }
+         */
 
-        // 메시지 추가 함수
-        function addMessage(content, isUser = false) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isUser ? 'user' : 'ai'}`;
-            
+        // ========================================
+        // 전역 변수 및 설정
+        // ========================================
+        
+        // DOM 요소들 - 채팅 인터페이스의 핵심 요소들
+        const chatMessages = document.getElementById('chatMessages');     // 메시지 표시 영역
+        const chatInput = document.getElementById('chatInput');           // 사용자 입력 필드
+        const sendButton = document.getElementById('sendButton');         // 전송 버튼
+        const typingIndicator = document.getElementById('typingIndicator'); // 타이핑 인디케이터
+        
+        // 채팅 세션 관리
+        let sessionId = generateSessionId();  // 세션 ID 생성
+        let messageHistory = [];              // 메시지 히스토리 저장
+        let isProcessing = false;             // 메시지 처리 중 상태
+        
+        // API 설정
+        const API_CONFIG = {
+            BASE_URL: '/api',           // 백엔드 API 기본 URL
+            CHAT_ENDPOINT: '/chat',     // 채팅 엔드포인트
+            TIMEOUT: 30000             // 요청 타임아웃 (30초)
+        };
+
+        // ========================================
+        // 유틸리티 함수들
+        // ========================================
+        
+        /**
+         * 세션 ID 생성 함수
+         * @returns {string} 고유한 세션 ID
+         */
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        /**
+         * 현재 시간을 포맷팅하여 반환
+         * @returns {string} 포맷된 시간 문자열 (HH:MM)
+         */
+        function getCurrentTime() {
             const now = new Date();
-            const timeString = now.toLocaleTimeString('ko-KR', { 
+            return now.toLocaleTimeString('ko-KR', { 
                 hour: '2-digit', 
                 minute: '2-digit' 
             });
+        }
+        
+        /**
+         * HTML 특수문자 이스케이프 처리
+         * @param {string} text - 이스케이프할 텍스트
+         * @returns {string} 이스케이프된 텍스트
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ========================================
+        // UI 관련 함수들
+        // ========================================
+        
+        /**
+         * 채팅 메시지를 화면에 추가하는 함수
+         * @param {string} content - 메시지 내용
+         * @param {boolean} isUser - 사용자 메시지 여부 (true: 사용자, false: AI)
+         * @param {string} messageId - 메시지 고유 ID (선택사항)
+         */
+        function addMessage(content, isUser = false, messageId = null) {
+            // 메시지 요소 생성
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'ai'}`;
+            
+            // 메시지 ID 설정 (나중에 메시지 수정/삭제 시 사용)
+            if (messageId) {
+                messageDiv.setAttribute('data-message-id', messageId);
+            }
+            
+            // 메시지 내용과 시간 추가
+            const timeString = getCurrentTime();
+            const escapedContent = escapeHtml(content);
             
             messageDiv.innerHTML = `
-                <div class="message-bubble">${content}</div>
+                <div class="message-bubble">${escapedContent}</div>
                 <div class="message-time">${timeString}</div>
             `;
             
-            // 환영 메시지 제거
+            // 환영 메시지 제거 (첫 메시지 시)
             const welcomeMessage = chatMessages.querySelector('.welcome-message');
             if (welcomeMessage) {
                 welcomeMessage.remove();
             }
             
+            // 메시지를 채팅 영역에 추가
             chatMessages.appendChild(messageDiv);
+            
+            // 스크롤을 최신 메시지로 이동
+            scrollToBottom();
+            
+            // 메시지 히스토리에 저장
+            messageHistory.push({
+                id: messageId || Date.now(),
+                content: content,
+                isUser: isUser,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        /**
+         * 채팅 영역을 맨 아래로 스크롤
+         */
+        function scrollToBottom() {
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-
-        // 메시지 전송 함수
-        function sendMessage() {
-            const message = chatInput.value.trim();
-            if (!message) return;
-
-            // 사용자 메시지 추가
-            addMessage(message, true);
-            chatInput.value = '';
-            
-            // 전송 버튼 비활성화
-            sendButton.disabled = true;
-            
-            // 타이핑 인디케이터 표시
-            typingIndicator.style.display = 'block';
-            
-            // TODO: 여기에 백엔드 API 호출 로직 추가
-            // 임시로 2초 후 응답 시뮬레이션
-            setTimeout(() => {
-                typingIndicator.style.display = 'none';
-                addMessage('죄송합니다. 아직 AI 서비스가 준비되지 않았습니다. 곧 서비스를 시작할 예정입니다!', false);
-                sendButton.disabled = false;
-            }, 2000);
+        
+        /**
+         * 타이핑 인디케이터 표시/숨김
+         * @param {boolean} show - 표시 여부
+         */
+        function showTypingIndicator(show) {
+            typingIndicator.style.display = show ? 'block' : 'none';
+            if (show) {
+                scrollToBottom();
+            }
+        }
+        
+        /**
+         * 전송 버튼 및 입력 필드 상태 제어
+         * @param {boolean} disabled - 비활성화 여부
+         */
+        function setInputState(disabled) {
+            sendButton.disabled = disabled;
+            chatInput.disabled = disabled;
+            isProcessing = disabled;
+        }
+        
+        /**
+         * 에러 메시지 표시
+         * @param {string} errorMessage - 에러 메시지
+         */
+        function showError(errorMessage) {
+            addMessage(`❌ ${errorMessage}`, false);
         }
 
-        // 이벤트 리스너
-        sendButton.addEventListener('click', sendMessage);
+        // ========================================
+        // 백엔드 통신 함수들
+        // ========================================
         
-        chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-
-        // 입력 필드 포커스
-        chatInput.focus();
-
-        // TODO: 백엔드 연결 함수들
-        /*
+        /**
+         * 백엔드 API로 메시지 전송
+         * 백엔드 개발자 참고사항:
+         * - 엔드포인트: POST /api/chat
+         * - 요청 헤더: Content-Type: application/json
+         * - 요청 본문: { "message": string, "session_id": string }
+         * - 응답 형식: { "response": string, "status": string, "session_id": string }
+         * 
+         * @param {string} message - 사용자 메시지
+         * @returns {Promise<string>} AI 응답 메시지
+         */
         async function sendToBackend(message) {
             try {
-                const response = await fetch('/api/chat', {
+                // API 요청 설정
+                const requestBody = {
+                    message: message,
+                    session_id: sessionId
+                };
+                
+                console.log('백엔드로 전송:', requestBody);
+                
+                // 백엔드 API 호출
+                const response = await fetch(API_CONFIG.BASE_URL + API_CONFIG.CHAT_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify(requestBody),
+                    // 타임아웃 설정
+                    signal: AbortSignal.timeout(API_CONFIG.TIMEOUT)
                 });
                 
+                // 응답 상태 확인
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                // JSON 응답 파싱
                 const data = await response.json();
+                console.log('백엔드 응답:', data);
+                
+                // 응답 데이터 검증
+                if (!data.response) {
+                    throw new Error('응답 데이터가 올바르지 않습니다.');
+                }
+                
+                // 세션 ID 업데이트 (필요시)
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                }
+                
                 return data.response;
+                
             } catch (error) {
-                console.error('Error:', error);
-                return '서버 연결에 문제가 발생했습니다.';
+                console.error('백엔드 통신 오류:', error);
+                
+                // 에러 타입별 처리
+                if (error.name === 'AbortError') {
+                    throw new Error('요청 시간이 초과되었습니다.');
+                } else if (error.message.includes('HTTP 404')) {
+                    throw new Error('API 엔드포인트를 찾을 수 없습니다.');
+                } else if (error.message.includes('HTTP 500')) {
+                    throw new Error('서버 내부 오류가 발생했습니다.');
+                } else {
+                    throw new Error('서버 연결에 문제가 발생했습니다.');
+                }
             }
         }
-        */
+
+        // ========================================
+        // 메시지 처리 함수들
+        // ========================================
+        
+        /**
+         * 사용자 메시지 전송 및 AI 응답 처리
+         * 이 함수가 전체 채팅 플로우를 관리합니다.
+         */
+        async function sendMessage() {
+            // 입력값 검증
+            const message = chatInput.value.trim();
+            if (!message || isProcessing) {
+                return;
+            }
+            
+            try {
+                // 1. 사용자 메시지 화면에 표시
+                addMessage(message, true);
+                
+                // 2. 입력 필드 초기화 및 UI 상태 변경
+                chatInput.value = '';
+                setInputState(true);
+                showTypingIndicator(true);
+                
+                // 3. 백엔드로 메시지 전송 및 응답 받기
+                const aiResponse = await sendToBackend(message);
+                
+                // 4. AI 응답 화면에 표시
+                addMessage(aiResponse, false);
+                
+            } catch (error) {
+                // 에러 발생 시 사용자에게 알림
+                console.error('메시지 전송 실패:', error);
+                showError(error.message);
+                
+            } finally {
+                // 5. UI 상태 복원
+                showTypingIndicator(false);
+                setInputState(false);
+                chatInput.focus();
+            }
+        }
+        
+        /**
+         * 채팅 히스토리 초기화
+         */
+        function clearChat() {
+            chatMessages.innerHTML = `
+                <div class="welcome-message">
+                    안녕하세요! 무엇을 도와드릴까요?
+                </div>
+            `;
+            messageHistory = [];
+            sessionId = generateSessionId();
+        }
+
+        // ========================================
+        // 이벤트 리스너 등록
+        // ========================================
+        
+        // 전송 버튼 클릭 이벤트
+        sendButton.addEventListener('click', sendMessage);
+        
+        // Enter 키 입력 이벤트
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // 입력 필드 포커스 이벤트 (자동 스크롤)
+        chatInput.addEventListener('focus', () => {
+            setTimeout(scrollToBottom, 100);
+        });
+        
+        // 페이지 로드 완료 시 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            chatInput.focus();
+            console.log('채팅 서비스 초기화 완료');
+            console.log('세션 ID:', sessionId);
+        });
+        
+        // 페이지 언로드 시 정리 작업
+        window.addEventListener('beforeunload', () => {
+            // 필요시 세션 종료 API 호출
+            console.log('채팅 세션 종료:', sessionId);
+        });
+
+        // ========================================
+        // 개발용 함수들 (배포 시 제거 가능)
+        // ========================================
+        
+        /**
+         * 개발용: 채팅 히스토리 출력
+         */
+        function debugPrintHistory() {
+            console.log('메시지 히스토리:', messageHistory);
+        }
+        
+        /**
+         * 개발용: 테스트 메시지 추가
+         */
+        function debugAddTestMessage() {
+            addMessage('테스트 메시지입니다.', false);
+        }
+        
+        // 개발 모드에서만 전역 함수로 노출
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            window.debugChat = {
+                printHistory: debugPrintHistory,
+                addTestMessage: debugAddTestMessage,
+                clearChat: clearChat,
+                sessionId: () => sessionId
+            };
+        }
     </script>
 </body>
 </html>
