@@ -32,3 +32,6 @@ def llm_reply(message: str) -> str:
             return response.choices[0].message["content"]
         except Exception:
             return str(response)
+
+def mz_reply(message: str) -> str:
+    return llm_reply(message)
